@@ -1,6 +1,6 @@
 ---
 name: Geo-WebService-Elevation-USGS
-version: 0.001
+version: 0.002
 author:
   - Tom Wyant (wyant at cpan dot org)
 abstract: Get elevation data from the USGS
@@ -10,11 +10,11 @@ resources:
 requires:
   SOAP::Lite: 0
 build_requires:
-  Test::More: 0
+  Test::More: 0.4
 provides:
   Geo::WebService::Elevation::USGS:
     file: lib/Geo/WebService/Elevation/USGS.pm
-    version: 0.001
+    version: 0.002
 generated_by: Module::Build version 0.3
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

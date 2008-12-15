@@ -70,7 +70,7 @@ use Carp;
 use Scalar::Util qw{looks_like_number};
 use SOAP::Lite;
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 use constant BEST_DATA_SET => -1;
 
@@ -460,8 +460,14 @@ or a hash whose {Elevation} key supplies the elevation value.
 =cut
 
 sub is_valid {
-    my $ele = ref $_[-1] eq 'HASH' ? $_[-1]{Elevation} : $_[-1];
-    looks_like_number($ele) && $ele > -1e+300;
+    my $ele = pop @_;
+    my $ref = ref $ele;
+    if ($ref eq 'HASH') {
+	$ele = $ele->{Elevation};
+    } elsif ($ref) {
+	croak "$ref reference not understood";
+    }
+    return looks_like_number($ele) && $ele > -1e+300;
 }
 
 =head3 $eq = $eq->set($attribute => $value ...);
@@ -889,6 +895,17 @@ getElevation() to be used whenever the 'source' array or hash has any
 entries at all, no matter how many it has.
 
 The default is 5, which was chosen based on timings of the two methods.
+
+=head1 ACKNOWLEDGMENTS
+
+The author wishes to acknowledge the following individuals and groups.
+
+The members of the geo-perl mailing list provided valuable suggestions
+and feedback, and generally helped me thrash through such issues as how
+the module should work and what it should actually be called.
+
+Michael R. Davis provided prompt and helpful feedback on a testing
+problem in my first module to rely heavily on Test::More.
 
 =head1 BUGS
 

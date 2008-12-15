@@ -5,22 +5,27 @@ use warnings;
 
 use Module::Build;
 
-my $bldr = Module::Build->new (
+(my $mbv = Module::Build->VERSION) =~ s/_//g;
+
+my %args = (
     dist_author => 'Tom Wyant (wyant at cpan dot org)',
     dist_abstract => 'Get elevation data from the USGS',
     module_name => 'Geo::WebService::Elevation::USGS',
     build_requires => {
-	'Test::More' => 0,
+	'Test::More' => 0.40,
     },
     requires => {
 	'SOAP::Lite' => 0,
     },
     license => 'perl',
-    meta_merge => {
-	no_index => {
-	    directory => [qw{inc t}],
-	},
-    },
 );
+
+$mbv >= 0.28 and $args{meta_merge} = {
+    no_index => {
+	directory => [qw{inc t}],
+    },
+};
+
+my $bldr = Module::Build->new (%args);
 
 $bldr->create_build_script ();
