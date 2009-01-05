@@ -22,10 +22,7 @@ my $dumper = eval {
 # If interactive, input is by Term::ReadLine if available, or a simple
 # subroutine otherwise. If not interactive, we just read STDIN.
 
-# Perl::Critic says you should use IO::Interactive here. But this is
-# supposed to be a lightweight example, so I will just note the
-# objection and move on.
-my $interactive = -t STDIN;	## no critic
+my $interactive = -t STDIN;
 my $prompt = 'usgs_ele> ';
 my $read = $interactive ?
     eval {require Term::ReadLine} ? do {
@@ -107,7 +104,7 @@ sub cmd_exit {
 # The help command displays very brief help.
 
 sub cmd_help {
-    <<eod;
+    return <<eod;
 
 Possible commands:
 
@@ -135,12 +132,12 @@ eod
 # object, and puts it where we can find it.
 
 sub cmd_new {
-    $ele = Geo::WebService::Elevation::USGS->new(@_);
+    return $ele = Geo::WebService::Elevation::USGS->new(@_);
 }
 
 # The 'sources' command sets the source attribute to a reference to the
 # array of its arguments (which may be empty).
 
 sub cmd_sources {
-    $ele->set(source => [@_]);
+    return $ele->set(source => [@_]);
 }
