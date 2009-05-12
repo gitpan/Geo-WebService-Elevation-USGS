@@ -1,25 +1,26 @@
 ---
 name: Geo-WebService-Elevation-USGS
-version: 0.004
+version: 0.005
 author:
   - Tom Wyant (wyant at cpan dot org)
 abstract: Get elevation data from the USGS
 license: perl
 resources:
-  license: ~
+  license: http://dev.perl.org/licenses/
 requires:
   Params::Util: 0.11
   SOAP::Lite: 0
+  Scalar::Util: 1.1
 build_requires:
   Test::More: 0.4
 provides:
   Geo::WebService::Elevation::USGS:
     file: lib/Geo/WebService/Elevation/USGS.pm
-    version: 0.004
-generated_by: Module::Build version 0.31
+    version: 0.005
+generated_by: Module::Build version 0.33
 meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.2.html
-  version: 1.2
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
 no_index:
   directory:
     - inc
