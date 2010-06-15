@@ -1,27 +1,28 @@
 ---
-name: Geo-WebService-Elevation-USGS
-version: 0.005
+abstract: 'Get elevation data from the USGS'
 author:
-  - Tom Wyant (wyant at cpan dot org)
-abstract: Get elevation data from the USGS
-license: perl
-resources:
-  license: http://dev.perl.org/licenses/
-requires:
-  Params::Util: 0.11
-  SOAP::Lite: 0
-  Scalar::Util: 1.1
+  - 'Tom Wyant (wyant at cpan dot org)'
 build_requires:
   Test::More: 0.4
-provides:
-  Geo::WebService::Elevation::USGS:
-    file: lib/Geo/WebService/Elevation/USGS.pm
-    version: 0.005
-generated_by: Module::Build version 0.33
+generated_by: 'Module::Build version 0.3607'
+license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: 1.4
+name: Geo-WebService-Elevation-USGS
 no_index:
   directory:
     - inc
     - t
+provides:
+  Geo::WebService::Elevation::USGS:
+    file: lib/Geo/WebService/Elevation/USGS.pm
+    version: 0.005_01
+requires:
+  Params::Util: 0.11
+  SOAP::Lite: 0
+  Scalar::Util: 1.1
+resources:
+  bugtracker: https://rt.cpan.org/Public/Dist/Display.html?Name=Geo-WebService-Elevation-USGS
+  license: http://dev.perl.org/licenses/
+version: 0.005_01

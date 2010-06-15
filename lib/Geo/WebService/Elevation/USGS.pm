@@ -90,9 +90,38 @@ use Params::Util 0.11 qw{_INSTANCE};
 use Scalar::Util 1.10 qw{looks_like_number};
 use SOAP::Lite;
 
-our $VERSION = '0.005';
+our $VERSION = '0.005_01';
 
 use constant BEST_DATA_SET => -1;
+
+my $sleep;
+{
+    our $THROTTLE;
+    my $mark;
+    if ( eval {
+	    require Time::HiRes;
+	    Time::HiRes->can( 'time' ) && Time::HiRes->can( 'sleep' );
+	} ) {
+	$mark = Time::HiRes::time();
+	$sleep = sub {
+	    $THROTTLE and $THROTTLE > 0 or return;
+	    my $now = Time::HiRes::time();
+	    $mark and $now < $mark and Time::HiRes::sleep( $mark - $now );
+	    $mark = $now + $THROTTLE;
+	    return;
+	};
+    } else {
+	$mark = time();
+	$sleep = sub {
+	    $THROTTLE and $THROTTLE > 0 or return;
+	    my $throttle = $THROTTLE < 1 ? 1 : $THROTTLE;
+	    my $now = time();
+	    $mark and $now < $mark and sleep( $mark - $now );
+	    $mark = $now + $throttle;
+	    return;
+	};
+    }
+}
 
 =head3 $eq = Geo::WebService::Elevation::USGS->new();
 
@@ -108,12 +137,15 @@ sub new {
     $class or croak "No class name specified";
     shift;
     my $self = {
+	carp	=> 0,
 	croak	=> 1,
 	default_ns	=> 'http://gisdata.usgs.gov/XMLWebServices2/',
 	error	=> undef,
 	places	=> undef,
 	proxy	=>
 	    'http://gisdata.usgs.gov/xmlwebservices2/elevation_service.asmx',
+	retry	=> 0,
+	retry_hook => sub {},
 	source	=> BEST_DATA_SET,
 	timeout	=> 30,
 	trace	=> undef,
@@ -127,10 +159,13 @@ sub new {
 
 my %mutator = (
     croak	=> \&_set_literal,
+    carp	=> \&_set_literal,
     default_ns	=> \&_set_literal,
-    error	=> \&_set_literal,,
+    error	=> \&_set_literal,
     places	=> \&_set_integer_or_undef,
     proxy	=> \&_set_literal,
+    retry	=> \&_set_unsigned_integer,
+    retry_hook	=> \&_set_hook,
     source	=> \&_set_source,
     timeout	=> \&_set_integer_or_undef,
     trace	=> \&_set_literal,
@@ -230,9 +265,9 @@ therefore has the same result as
 
  $ele->set(source => qr{CONUS}i);
 
-If the optional $valid argument to elevation() is specified, data with
-invalid elevations are eliminated before the array is returned. Note
-that this may result in an empty array.
+If the optional C<$valid> argument to elevation() is specified, data
+with invalid elevations are eliminated before the array is returned.
+Note that this may result in an empty array.
 
 =cut
 
@@ -252,8 +287,7 @@ that this may result in an empty array.
     );
 
     sub elevation {
-	my @args = @_;
-	my ($self, $lat, $lon, $valid) = _latlon(@args);
+	my ($self, $lat, $lon, $valid) = _latlon( @_ );
 	my $ref = ref (my $source = $self->_get_source());
 	my $rslt;
 	if ($ref eq 'ARRAY') {
@@ -272,9 +306,8 @@ that this may result in an empty array.
 	    $rslt = [grep {$check->($self, $source, $_)} @$raw];
   	    if ($ref eq 'HASH') {
 		foreach (sort keys %$source) {
-		    my $err = "Source Data_ID $_ not found";
-		    $self->get('croak') and croak $err;
-		    $self->set(error => $err);
+		    $self->_error( "Source Data_ID $_ not found" );
+		    $self->{croak} and croak $self->{error};
 		    return;
 		}
 	    }
@@ -305,7 +338,7 @@ sub get {
     return $self->{$attr};
 }
 
-=head3 $rslt = $eq->getAllElevations($lat, $lon);
+=head3 $rslt = $eq->getAllElevations($lat, $lon, $valid);
 
 This method executes the getAllElevations query, which returns the
 elevation of the given point as recorded in all available data sets. The
@@ -326,47 +359,76 @@ non-numeric value (e.g. 'BAD_EXTENT', though this is nowhere documented
 that I can find), or a very large negative number (documented as
 -1.79769313486231E+308).
 
+If the optional C<$valid> argument to getAllElevations() is specified,
+data with invalid elevations are eliminated before the array is
+returned. Note that this may result in an empty array.
+
 =cut
 
 sub getAllElevations {
-    my @args = @_;
-    my ($self, $lat, $lon) = _latlon(@args);
+    my ($self, $lat, $lon, $valid) = _latlon( @_ );
     my $soap = $self->_soapdish();
+    my $retry_limit = $self->get( 'retry' );
+    my $retry = 0;
 
-    my $raw = exists $self->{_hack_result} ?
-	delete $self->{_hack_result} :
-	eval {
-	$soap->call (SOAP::Data->name ('getAllElevations')->attr (
-		{xmlns => $self->{default_ns}}) =>
-	    SOAP::Data->new(name => 'X_Value', type => 'string',
-		value => $lon),
-	    SOAP::Data->new(name => 'Y_Value', type => 'string',
-		value => $lat),
-	    SOAP::Data->new(name => 'Elevation_Units', type => 'string',
-		value => $self->{units}),
-	);
-    };
-    my $cooked = $self->_digest($raw);
-    ref $cooked eq 'HASH' or return;
-    my @rslt;
-    my $ref = ref $cooked->{Data_ID};
-    if ($ref eq 'ARRAY') {
-	my $limit = @{$cooked->{Data_ID}} - 1;
-	foreach my $inx (0 .. (scalar @{$cooked->{Data_ID}} - 1)) {
-	    push @rslt, {
-		Data_Source => $cooked->{Data_Source}[$inx],
-		Data_ID => $cooked->{Data_ID}[$inx],
-		Elevation => $cooked->{Elevation}[$inx],
-		Units => $cooked->{Units}[$inx],
+    while ( $retry++ <= $retry_limit ) {
+
+	$self->{error} = undef;
+	eval {1};	# Clear $@.
+
+	my $raw = exists $self->{_hack_result} ?
+	    delete $self->{_hack_result} :
+	    eval {
+
+		$sleep->();
+
+		local $SOAP::Constants::DO_NOT_USE_CHARSET = 1;
+
+		$soap->call (SOAP::Data->name ('getAllElevations')->attr (
+			{xmlns => $self->{default_ns}}) =>
+		    SOAP::Data->new(name => 'X_Value', type => 'string',
+			value => $lon),
+		    SOAP::Data->new(name => 'Y_Value', type => 'string',
+			value => $lat),
+		    SOAP::Data->new(name => 'Elevation_Units', type => 'string',
+			value => $self->{units}),
+		);
 	    };
+	my $cooked = $self->_digest($raw);
+	ref $cooked eq 'HASH' or next;
+	my @rslt;
+	my $ref = ref $cooked->{Data_ID};
+	if ($ref eq 'ARRAY') {
+	    my $limit = @{$cooked->{Data_ID}} - 1;
+	    foreach my $inx (0 .. (scalar @{$cooked->{Data_ID}} - 1)) {
+		push @rslt, {
+		    Data_Source => $cooked->{Data_Source}[$inx],
+		    Data_ID => $cooked->{Data_ID}[$inx],
+		    Elevation => $cooked->{Elevation}[$inx],
+		    Units => $cooked->{Units}[$inx],
+		};
+	    }
+	} elsif ($ref) {
+	    $self->_error( "Unexpected $ref reference in {Data_ID}" );
+	    next;
+	} else {	# One of the ActiveState MSWin32 variants seems to do this.
+	    push @rslt, $cooked;
 	}
-    } elsif ($ref) {
-	return $self->_error(
-	    "Unexpected $ref reference in {Data_ID}");
-    } else {	# One of the ActiveState MSWin32 variants seems to do this.
-	push @rslt, $cooked;
+	if ($valid) {
+	    @rslt = grep {is_valid($_)} @rslt;
+	}
+	return \@rslt;
+
+    } continue {
+
+	$retry <= $retry_limit
+	    and $self->get( 'retry_hook' )->( $self, $retry,
+	    getAllElevations => $lat, $lon );
+
     }
-    return \@rslt;
+
+    $self->{croak} and croak $self->{error};
+    return;
 }
 
 =head3 $rslt = $eq->getElevation($lat, $lon, $source, $elevation_only);
@@ -439,40 +501,67 @@ about it.
 =cut
 
 sub getElevation {
-    my @args = @_;
-    my ($self, $lat, $lon, $source, $only) = _latlon(@args);
+    my ($self, $lat, $lon, $source, $only) = _latlon( @_ );
     defined $source or $source = BEST_DATA_SET;
     my $soap = $self->_soapdish();
+    my $retry_limit = $self->get( 'retry' );
+    my $retry = 0;
 
-    my $rslt = exists $self->{_hack_result} ?
-	delete $self->{_hack_result} :
-	eval {
-	$soap->call(SOAP::Data->name ('getElevation')->attr (
-		{xmlns => $self->{default_ns}}) =>
-	    SOAP::Data->new(name => 'X_Value', type => 'string',
-		value => $lon),
-	    SOAP::Data->new(name => 'Y_Value', type => 'string',
-		value => $lat),
-	    SOAP::Data->new(name => 'Source_Layer', type => 'string', 
-		value => $source),
-	    SOAP::Data->new(name => 'Elevation_Units', type => 'string',
-		value => $self->{units}),
-	    SOAP::Data->new(name => 'Elevation_Only', type => 'string',
-		value => $only ? 'true' : 'false'),
-	);
-    };
+    while ( $retry++ <= $retry_limit ) {
 
-    $@ and return $self->_digest($rslt, $source);
+	$self->{error} = undef;
+	eval {1};	# Clear $@.
 
-    if (_INSTANCE($rslt, 'SOAP::SOM') && $rslt->fault &&
-	    $rslt->faultstring =~
-	m/Conversion from string "BAD_EXTENT" to type 'Double'/) {
-	if (my $hash = $self->_get_bad_extent_hash($source)) {
-	    return $hash;
+	my $rslt = exists $self->{_hack_result} ?
+	    delete $self->{_hack_result} :
+	    eval {
+
+		$sleep->();
+
+		local $SOAP::Constants::DO_NOT_USE_CHARSET = 1;
+
+		$soap->call(SOAP::Data->name ('getElevation')->attr (
+			{xmlns => $self->{default_ns}}) =>
+		    SOAP::Data->new(name => 'X_Value', type => 'string',
+			value => $lon),
+		    SOAP::Data->new(name => 'Y_Value', type => 'string',
+			value => $lat),
+		    SOAP::Data->new(name => 'Source_Layer', type => 'string', 
+			value => $source),
+		    SOAP::Data->new(name => 'Elevation_Units', type => 'string',
+			value => $self->{units}),
+		    SOAP::Data->new(name => 'Elevation_Only', type => 'string',
+			value => $only ? 'true' : 'false'),
+		);
+	    };
+
+	$@ and do {
+	    $self->_error( $@ );
+	    next;
+	};
+
+	if (_INSTANCE($rslt, 'SOAP::SOM') && $rslt->fault &&
+		$rslt->faultstring =~
+	    m/Conversion from string "BAD_EXTENT" to type 'Double'/) {
+	    if (my $hash = $self->_get_bad_extent_hash($source)) {
+		return $hash;
+	    }
 	}
+
+	my $info = $self->_digest( $rslt, $source ) or next;
+	return $info;
+
+    } continue {
+
+	$retry <= $retry_limit
+	    and $self->get( 'retry_hook' )->( $self, $retry,
+	    getElevation => $lat, $lon, $source, $only );
+
     }
 
-    return $self->_digest($rslt, $source);
+    $self->{croak} and croak $self->{error};
+    return;
+
 }
 
 =head3 $boolean = $eq->is_valid($elevation);
@@ -505,27 +594,49 @@ result in an exception being thrown.
 
 =cut
 
-sub set {
-    my ($self, @args) = @_;
-    while (@args) {
-	my $attr = shift @args;
-	exists $mutator{$attr}
-	    or croak "No such attribute as '$attr'";
-	$mutator{$attr}->($self, $attr, shift @args);
+
+{
+
+    my %clean_soapdish;	# Attributes that are used in _soapdish();
+
+    sub set {
+	my ($self, @args) = @_;
+	my $clean;
+	while (@args) {
+	    my ( $name, $val ) = splice @args, 0, 2;
+	    exists $mutator{$name}
+		or croak "No such attribute as '$name'";
+	    $mutator{$name}->( $self, $name, $val );
+	    $clean ||= $clean_soapdish{$name};
+	}
+	$clean and delete $self->{_soapdish};
+	return $self;
     }
-    return $self;
+
+    sub _set_clean_soapdish {
+	%clean_soapdish = map { $_ => 1 } @_;
+	return;
+    }
+
+}
+
+sub _set_hook {
+    my ( $self, $name, $val ) = @_;
+    ref $val eq 'CODE'
+	or croak "Attribute $name must be a code reference";
+    return( $self->{$name} = $val );
 }
 
 sub _set_integer {
     my ($self, $name, $val) = @_;
-    (!defined $val || $val !~ m/^[-+]?\d+$/)
+    (!defined $val || $val !~ m/ \A [-+]? \d+ \z /smx)
 	and croak "Attribute $name must be an integer";
     return ($self->{$name} = $val + 0);
 }
 
 sub _set_integer_or_undef {
     my ($self, $name, $val) = @_;
-    (defined $val && $val !~ m/^\d+$/)
+    (defined $val && $val !~ m/ \A \d+ \z /smx)
 	and croak "Attribute $name must be an unsigned integer or undef";
     return ($self->{$name} = $val);
 }
@@ -544,6 +655,13 @@ sub _set_literal {
 	delete $self->{_source_cache};
 	return ($self->{$name} = $val);
     }
+}
+
+sub _set_unsigned_integer {
+    my ($self, $name, $val) = @_;
+    ( !defined $val || $val !~ m/ \A \d+ \z /smx )
+	and croak "Attribute $name must be an unsigned integer";
+    return ($self->{$name} = $val + 0);
 }
 
 sub _set_use_all_limit {
@@ -591,6 +709,8 @@ sub _digest {
 		: $_[0]}
 	}
     }
+
+    my $error;
     if (ref $rslt eq 'HASH') {
 	# The following line is because we may be handling an 'elevation
 	# only' request.
@@ -601,7 +721,7 @@ sub _digest {
 	foreach my $key (
 	    qw{USGS_Elevation_Web_Service_Query Elevation_Query}) {
 	    (ref $rslt eq 'HASH' && exists $rslt->{$key}) or do {
-		$self->{error} = "Elevation result is missing tag <$key>";
+		$error = "Elevation result is missing tag <$key>";
 		last;
 	    };
 	    $rslt = $rslt->{$key};
@@ -610,21 +730,21 @@ sub _digest {
 	    if (defined $source &&
 ####		$self->_supress_no_value_err() &&
 		$rslt =~ m/ERROR:\sNo\sElevation\svalue\swas\sreturned\s
-			from\sservers\./ix &&
+			from\sservers\./ismx &&
 		(my $hash = $self->_get_bad_extent_hash($source))) {
 		return $hash;
 	    }
-	    $rslt =~ m/[.?!]$/ or $rslt .= '.';
-	    $self->{error} = defined $source ?
+	    $rslt =~ m/ [.?!] \z /smx or $rslt .= '.';
+	    $error = defined $source ?
 		"$rslt Source = '$source'" : $rslt;
 	}
     } else {
-	$self->{error} = "No data found in SOAP result";
+	$error = "No data found in SOAP result";
     }
-    if ($self->{error}) {
-	$self->{croak} and croak $self->{error};
-	return;
-    }
+
+    $error
+	and return $self->_error( $error );
+
     if ($rslt && $round) {
 	if (ref $rslt->{Elevation}) {
 	    $rslt->{Elevation} = [
@@ -639,12 +759,15 @@ sub _digest {
 #	$ele->_error($text);
 #
 #	Set the error attribute, and croak if the croak attribute is
-#	true. If croak is false, just return.
+#	true. If croak is false, just return, carping if the carp
+#	attribute is true.
 
 sub _error {
     my ($self, @args) = @_;
     $self->{error} = join '', @args;
-    $self->{croak} and croak $self->{error};
+##  $self->{croak} and croak $self->{error};
+    $self->{croak} and return;
+    $self->{carp} and carp $self->{error};
     return;
 }
 
@@ -804,12 +927,14 @@ sub _normalize_id {return uc $_[0]}
 #	We also set the error attribute and $@ to undef in preparation
 #	for a query.
 
+_set_clean_soapdish( qw{ default_ns proxy timeout } );
+
 sub _soapdish {
     my $self = shift;
+    $self->{trace} and SOAP::Trace->import ('all');
+    $self->{_soapdish} and return $self->{_soapdish};
     my $conn = '';	# Other possibility is '#'.
     my $act = sub {join $conn, @_};
-    $self->{error} = undef;
-    $self->{trace} and SOAP::Trace->import ('all');
     my $soap = SOAP::Lite->can ('default_ns') ?
 	SOAP::Lite
 	    ->default_ns ($self->{default_ns})
@@ -820,8 +945,7 @@ sub _soapdish {
 	    ->on_action ($act)
 	    ->uri ($self->{default_ns})
 	    ->proxy ($self->{proxy}, timeout => $self->{timeout});
-    eval {1};	# Clear $@.
-    return $soap;
+    return ( $self->{_soapdish} = $soap );
 }
 
 #	$boolean = $ele->_supress_no_value_err()
@@ -867,10 +991,28 @@ __END__
 
 =head2 Attributes
 
+=head3 carp (boolean)
+
+This boolean attribute determines whether the data acquisition methods carp on
+encountering an error. If false, they silently return undef. Note,
+though, that the L<croak|/croak> attribute trumps this one.
+
+If L<retry|/retry> is set to a number greater than 0, you will get a
+carp on each failed query, provided L<croak|/croak> is false. If
+L<croak|/croak> is true, no retries will be carped.
+
+This attribute was introduced in Geo::WebService::Elevation::USGS
+version 0.005_01.
+
+The default is 0 (i.e. false).
+
 =head3 croak (boolean)
 
 This attribute determines whether the data acquisition methods croak on
 encountering an error. If false, they return undef on an error.
+
+If L<retry|/retry> is set to a number greater than 0, the data
+acquisition method will not croak until all retries are exhausted.
 
 The default is 1 (i.e. true).
 
@@ -919,6 +1061,43 @@ track the change.
 
 The default is
 'http://gisdata.usgs.gov/xmlwebservices2/elevation_service.asmx'.
+
+=head3 retry (unsigned integer)
+
+This attribute specifies the number of retries to be done by
+C<getAllElevations()> and C<getElevation()> when an error is
+encountered. The first try is not considered a retry, so if you set this
+to 1 you get a maximum of two queries (the try and the retry).
+
+Retries are done only on actual errors, not on bad extents. They are
+also subject to the C<$THROTTLE> setting if any.
+
+The default is 0, i.e. no retries.
+
+=head3 retry_hook (code reference)
+
+This attribute specifies a piece of code to be called before retrying.
+The code will be called before a retry takes place, and will be passed
+the Geo::WebService::Elevation::USGS object, the number of the retry
+(from 1), the name of the method being retried (C<'getAllElevations'> or
+C<'getElevation'>), and the arguments to that method. If the position
+was passed as an object, the hook gets the latitude and longitude
+unpacked from the object. The hook will B<not> be called before the
+first try, nor after the last retry.
+
+Examples:
+
+ # To sleep 5 seconds between retries:
+ $eq->set( retry_hook => sub { sleep 5 } );
+ 
+ # To sleep 1 second before the first retry, 2 seconds
+ # before the second, and so on:
+ $eq->set( retry_hook => sub { sleep $_[1] } );
+ 
+ # To do nothing between retries:
+ $eq->set( retry_hook => sub {} );
+
+The default is the null subroutine, i.e. C<sub {}>.
 
 =head3 source
 
@@ -974,6 +1153,34 @@ entries at all, no matter how many it has.
 
 The default is 5, which was chosen based on timings of the two methods.
 
+=head2 Globals
+
+=head3 $Geo::WebService::Elevation:USGS::THROTTLE
+
+If set to a positive number, this symbol limits the rate at which
+queries can be issued. The value represents the minimum interval between
+queries (in seconds), which is enforced by having the query methods
+C<sleep()> as needed. This minimum is enforced among objects, not just
+within a single object.
+
+If L<Time::HiRes|Time::HiRes> can be loaded, its C<time()> and
+C<sleep()> will be used, and fractional minimum intervals can be
+specified. If it can not be loaded, the core C<time()> and C<sleep()>
+will be used. With the core functions, the resolution is a second, and
+a C<$THROTTLE> value between 0 and 1 will be taken to be 1.
+
+The behavior of this functionality when C<$THROTTLE> is set to a
+non-numeric value is undefined. In practice, you will probably get an
+error of some sort when you issue the query, but the author makes no
+commitments. Same for quasi-numbers such as C<Inf> and C<NaN>.
+
+The default is C<undef>, which means that this functionality is
+disabled.
+
+This functionality should be considered experimental, and it may be
+revoked, possibly without notice, if either the functionality or this
+particular implementation of it are seen to be a bad idea.
+
 =head1 ACKNOWLEDGMENTS
 
 The author wishes to acknowledge the following individuals and groups.
@@ -996,14 +1203,18 @@ L<http://rt.cpan.org/>.
 
 Thomas R. Wyant, III; F<wyant at cpan dot org>
 
-=head1 COPYRIGHT
+=head1 COPYRIGHT AND LICENSE
 
-Copyright 2008, 2009 by Thomas R. Wyant, III. All rights reserved.
+Copyright (C) 2008-2010, Thomas R. Wyant, III
 
-=head1 LICENSE
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl 5.10.0. For more details, see the full text
+of the licenses in the directory LICENSES.
 
-This module is free software; you can use it, redistribute it and/or
-modify it under the same terms as Perl itself. Please see
-L<http://perldoc.perl.org/index-licence.html> for the current licenses.
+This program is distributed in the hope that it will be useful, but
+without any warranty; without even the implied warranty of
+merchantability or fitness for a particular purpose.
 
 =cut
+
+# ex: set textwidth=72 :

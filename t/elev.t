@@ -28,7 +28,7 @@ my $ele = _skip_it(eval {Geo::WebService::Elevation::USGS->new(places => 2)},
 	"Unable to access $pxy");
 }
 
-plan (tests => 144);
+plan (tests => 163);
 
 my $ele_ft = '54.70';	# Expected elevation in feet.
 my $ele_mt = '16.67';	# Expected elevation in meters.
@@ -266,12 +266,25 @@ SKIP: {
     like($@, qr{^No data found in SOAP result},
 	'No data error when going through getAllElevations');
 
-    $bogus->set(croak => 0);
+    $bogus->set(croak => 0, carp => 1);
     $bogus->{_hack_result} = undef;
     $rslt = eval {$bogus->elevation(38.898748, -77.037684)};
     ok(!$@, 'Should not throw an error on bad result if croak is false')
 	or diag($@);
+    like( $msg, qr{ \A No \s data \s found \b }smx,
+	'Should warn if croak is false but carp is true' );
     ok(!$rslt, 'Should return undef on bad result if croak is false');
+    like($bogus->get('error'), qr{^No data found in SOAP result},
+	'No data error when going through getAllElevations');
+
+    $msg = undef;
+    $bogus->set(carp => 0);
+    $bogus->{_hack_result} = undef;
+    $rslt = eval {$bogus->elevation(38.898748, -77.037684)};
+    ok(!$@, 'Should not throw an error on bad result if croak is false')
+	or diag($@);
+    ok( ! defined $msg, 'Should not warn if carp is false' );
+    ok(!$rslt, 'Should return undef on bad result if croak is undef');
     like($bogus->get('error'), qr{^No data found in SOAP result},
 	'No data error when going through getAllElevations');
 
@@ -425,6 +438,49 @@ SKIP: {
 	ok(($msg = $@), 'Should throw an error on bad proxy if croak is true');
 	like($msg, qr{^404\b},
 	    'SOAP error when going through getAllElevations');
+    }
+
+}
+
+{
+    my $retries;
+    my $bogus = $ele->new(
+	places => 2,
+	retry => 1,	# Do a single retry
+	retry_hook => sub { $retries++ },	# Just count them
+    );
+
+    SKIP: {
+	$retries = 0;
+	$bogus->{_hack_result} = _get_bad_som();
+	$rslt = eval {$bogus->getElevation(38.898748, -77.037684)};
+	ok( $retries, 'A retry was performed' );
+	_skip_on_server_error($bogus, 6);
+	ok(!$@, 'getElevation succeeded on retry') or diag($@);
+	ok($rslt, 'getElevation returned a result on retry');
+	is(ref $rslt, 'HASH', 'getElevation returned a hash on retry');
+	is($rslt->{Data_ID}, 'NED.CONUS_NED_13E',
+	    'Data came from NED.CONUS_NED_13E on retry');
+	is($rslt->{Units}, 'FEET', 'Elevation is in feet on retry');
+	is($rslt->{Elevation}, $ele_ft, "Elevation is $ele_ft on retry");
+    }
+
+    SKIP: {
+	$retries = 0;
+	$bogus->{_hack_result} = _get_bad_som();
+	$rslt = eval {$bogus->getAllElevations(38.898748, -77.037684)};
+	ok( $retries, 'A retry was performed' );
+	_skip_on_server_error($bogus, 6);
+	ok(!$@, 'getAllElevations succeeded on retry') or diag($@);
+	ok($rslt, 'getAllElevations returned a result on retry');
+	is(ref $rslt, 'ARRAY', 'getAllElevations returned an array on retry');
+	my %hash = map { $_->{Data_ID} => $_ } @{ $rslt };
+	ok( $hash{'NED.CONUS_NED_13E'},
+	    'Results contain NED.CONUS_NED_13E on retry' );
+	is($hash{'NED.CONUS_NED_13E'}{Units}, 'FEET',
+	    'Elevation is in feet on retry');
+	is($hash{'NED.CONUS_NED_13E'}{Elevation}, $ele_ft,
+	    "Elevation is $ele_ft on retry");
     }
 
 }

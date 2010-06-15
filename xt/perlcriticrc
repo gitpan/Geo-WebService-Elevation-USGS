@@ -1,9 +1,15 @@
+# >> Customized by adding allow_delegation_to entry to RequireArgUnpacking
+
 severity	= stern
 theme		= core
 
 [Perl::Critic::Policy::BuiltinFunctions::ProhibitStringyEval]
 
 allow_includes	= 1
+
+[Perl::Critic::Policy::Documentation::PodSpelling]
+
+spell_command = spell
 
 [Perl::Critic::Policy::InputOutput::ProhibitInteractiveTest]
 
@@ -16,9 +22,21 @@ allow_includes	= 1
 
 severity	= harsh
 
+[Perl::Critic::Policy::InputOutput::RequireCheckedOpen]
+
+# For some reason the default is 3 ('harsh'). But IM(NS)HO this
+# kind of thing should be a 5. So:
+
+severity	= gentle
+
 [Perl::Critic::Policy::Subroutines::RequireArgUnpacking]
 
+allow_delegation_to		= _latlon
 short_subroutine_statements	= 3
+
+[Perl::Critic::Policy::Subroutines::RequireFinalReturn]
+
+terminal_funcs	= CORE::exit
 
 [Perl::Critic::Policy::TestingAndDebugging::ProhibitNoStrict]
 

@@ -7,8 +7,12 @@ use strict;
 use warnings;
 
 use Geo::WebService::Elevation::USGS;
+
 BEGIN {
-    eval {use Time::HiRes qw{time alarm sleep}};
+    eval {
+	require Time::HiRes;
+	Time::HiRes->import( qw{time alarm sleep} );
+    };
 }
 
 # Output is by whatever dumper is available.
@@ -104,7 +108,7 @@ sub cmd_exit {
 # The help command displays very brief help.
 
 sub cmd_help {
-    return <<eod;
+    return <<'EOD';
 
 Possible commands:
 
@@ -120,16 +124,17 @@ help - display this text;
 new - create a new Geo::WebService::Elevation::USGS object;
 set name value - Set the named attribute to the given
     value;
-sources - set source attribute to array of arguments.
+sources - set source attribute to array of arguments;
+throttle - displays or changes
+    $Geo::WebService::Elevation::USGS::THROTTLE.
 
 South latitudes and west longitudes are negative.
 
-eod
+EOD
 }
 
-
-# The 'new' command wraps the Geo::WebService::Elevation::USGS 'new', nabs the new
-# object, and puts it where we can find it.
+# The 'new' command wraps the Geo::WebService::Elevation::USGS 'new',
+# nabs the new object, and puts it where we can find it.
 
 sub cmd_new {
     return $ele = Geo::WebService::Elevation::USGS->new(@_);
@@ -141,3 +146,13 @@ sub cmd_new {
 sub cmd_sources {
     return $ele->set(source => [@_]);
 }
+
+# The 'throttle' command sets the throttle time, which is the minimum
+# elapsed time between queries.
+
+sub cmd_throttle {
+    @_ and $Geo::WebService::Elevation::USGS::THROTTLE = $_[0];
+    return $Geo::WebService::Elevation::USGS::THROTTLE;
+}
+
+# ex: set textwidth=72 :
