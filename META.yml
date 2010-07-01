@@ -18,7 +18,7 @@ no_index:
 provides:
   Geo::WebService::Elevation::USGS:
     file: lib/Geo/WebService/Elevation/USGS.pm
-    version: 0.005_03
+    version: 0.006
 requires:
   Params::Util: 0.11
   SOAP::Lite: 0
@@ -27,4 +27,4 @@ requires:
 resources:
   bugtracker: https://rt.cpan.org/Public/Dist/Display.html?Name=Geo-WebService-Elevation-USGS
   license: http://dev.perl.org/licenses/
-version: 0.005_03
+version: 0.006

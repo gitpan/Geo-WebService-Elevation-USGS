@@ -92,7 +92,7 @@ use Params::Util 0.11 qw{_INSTANCE};
 use Scalar::Util 1.10 qw{looks_like_number};
 use SOAP::Lite;
 
-our $VERSION = '0.005_03';
+our $VERSION = '0.006';
 
 use constant BEST_DATA_SET => -1;
 
@@ -115,12 +115,9 @@ my $using_time_hires;
     $mark = _time();
     sub _pause {
 	my ( $self ) = @_;
-	if ( defined $THROTTLE ) {
-	    carp '$THROTTLE deprecated - use ', __PACKAGE__,
-	    '->set( throttle => value ) instead';
-	    __PACKAGE__->set( throttle => $THROTTLE );
-	    $THROTTLE = undef;
-	}
+	defined $THROTTLE
+	    and croak '$THROTTLE revoked - use ', __PACKAGE__,
+		'->set( throttle => value ) instead';
 	my $now = _time();
 	while ( $now < $mark ) {
 	    _sleep( $mark - $now );
