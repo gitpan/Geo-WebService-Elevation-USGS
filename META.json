@@ -1,0 +1,52 @@
+{
+   "abstract" : "Get elevation data from the USGS",
+   "author" : [
+      "Tom Wyant (wyant at cpan dot org)"
+   ],
+   "dynamic_config" : 1,
+   "generated_by" : "Module::Build version 0.38, CPAN::Meta::Converter version 2.110930",
+   "license" : [
+      "perl_5"
+   ],
+   "meta-spec" : {
+      "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
+      "version" : "2"
+   },
+   "name" : "Geo-WebService-Elevation-USGS",
+   "no_index" : {
+      "directory" : [
+         "inc",
+         "t"
+      ]
+   },
+   "prereqs" : {
+      "build" : {
+         "requires" : {
+            "Test::More" : "0.4"
+         }
+      },
+      "runtime" : {
+         "requires" : {
+            "SOAP::Lite" : 0,
+            "Scalar::Util" : "1.1",
+            "perl" : "5.008"
+         }
+      }
+   },
+   "provides" : {
+      "Geo::WebService::Elevation::USGS" : {
+         "file" : "lib/Geo/WebService/Elevation/USGS.pm",
+         "version" : "0.007"
+      }
+   },
+   "release_status" : "stable",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "https://rt.cpan.org/Public/Dist/Display.html?Name=Geo-WebService-Elevation-USGS"
+      },
+      "license" : [
+         "http://dev.perl.org/licenses/"
+      ]
+   },
+   "version" : "0.007"
+}

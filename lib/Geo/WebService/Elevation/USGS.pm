@@ -88,11 +88,10 @@ use strict;
 use warnings;
 
 use Carp;
-use Params::Util 0.11 qw{_INSTANCE};
-use Scalar::Util 1.10 qw{looks_like_number};
+use Scalar::Util 1.10 qw{ blessed looks_like_number };
 use SOAP::Lite;
 
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 
 use constant BEST_DATA_SET => -1;
 
@@ -389,17 +388,20 @@ sub getAllElevations {
     while ( $retry++ <= $retry_limit ) {
 
 	$self->{error} = undef;
-	eval {1};	# Clear $@.
 
 	$self->_pause();
 
-	my $raw = exists $self->{_hack_result} ?
-	    delete $self->{_hack_result} :
-	    eval {
+	my $raw;
+	eval {
+	    if ( exists $self->{_hack_result} ) {
+		$raw = delete $self->{_hack_result}
+
+	    } else {
 
 		local $SOAP::Constants::DO_NOT_USE_CHARSET = 1;
 
-		$soap->call (SOAP::Data->name ('getAllElevations')->attr (
+		$raw = $soap->call(
+		    SOAP::Data->name ('getAllElevations')->attr (
 			{xmlns => $self->{default_ns}}) =>
 		    SOAP::Data->new(name => 'X_Value', type => 'string',
 			value => $lon),
@@ -408,13 +410,20 @@ sub getAllElevations {
 		    SOAP::Data->new(name => 'Elevation_Units', type => 'string',
 			value => $self->{units}),
 		);
-	    };
+	    }
+
+	    1;
+	} or do {
+	    $self->_error( $@ );
+	    next;
+	};
+
 	my $cooked = $self->_digest($raw);
 	ref $cooked eq 'HASH' or next;
 	my @rslt;
 	my $ref = ref $cooked->{Data_ID};
 	if ($ref eq 'ARRAY') {
-	    my $limit = @{$cooked->{Data_ID}} - 1;
+###	    my $limit = @{$cooked->{Data_ID}} - 1;
 	    foreach my $inx (0 .. (scalar @{$cooked->{Data_ID}} - 1)) {
 		push @rslt, {
 		    Data_Source => $cooked->{Data_Source}[$inx],
@@ -515,6 +524,9 @@ about it.
 
 =cut
 
+my $bad_extent_re = _make_matcher(
+    q{Conversion from string "BAD_EXTENT" to type 'Double'} );
+
 sub getElevation {
     my ($self, $lat, $lon, $source, $only) = _latlon( @_ );
     defined $source or $source = BEST_DATA_SET;
@@ -525,17 +537,19 @@ sub getElevation {
     while ( $retry++ <= $retry_limit ) {
 
 	$self->{error} = undef;
-	eval {1};	# Clear $@.
 
 	$self->_pause();
 
-	my $rslt = exists $self->{_hack_result} ?
-	    delete $self->{_hack_result} :
-	    eval {
+	my $rslt;
+	eval {
+
+	    if ( exists $self->{_hack_result} ) {
+		$rslt = delete $self->{_hack_result};
+	    } else {
 
 		local $SOAP::Constants::DO_NOT_USE_CHARSET = 1;
 
-		$soap->call(SOAP::Data->name ('getElevation')->attr (
+		$rslt = $soap->call(SOAP::Data->name ('getElevation')->attr (
 			{xmlns => $self->{default_ns}}) =>
 		    SOAP::Data->new(name => 'X_Value', type => 'string',
 			value => $lon),
@@ -548,16 +562,15 @@ sub getElevation {
 		    SOAP::Data->new(name => 'Elevation_Only', type => 'string',
 			value => $only ? 'true' : 'false'),
 		);
-	    };
-
-	$@ and do {
+	    }
+	    1;
+	} or do {
 	    $self->_error( $@ );
 	    next;
 	};
 
-	if (_INSTANCE($rslt, 'SOAP::SOM') && $rslt->fault &&
-		$rslt->faultstring =~
-	    m/Conversion from string "BAD_EXTENT" to type 'Double'/) {
+	if ( _instance( $rslt, 'SOAP::SOM' ) && $rslt->fault &&
+		$rslt->faultstring =~ m/ $bad_extent_re /smxo ) {
 	    if (my $hash = $self->_get_bad_extent_hash($source)) {
 		return $hash;
 	    }
@@ -614,7 +627,7 @@ result in an exception being thrown.
 
     my %clean_soapdish;	# Attributes that are used in _soapdish();
 
-    sub set {
+    sub set {	## no critic (ProhibitAmbiguousNames)
 	my ($self, @args) = @_;
 	my $clean;
 	while (@args) {
@@ -724,10 +737,12 @@ sub _set_use_all_limit {
 #	error reported in the SOAP packet in lieu of the actual data
 #	(i.e. when the no SOAP error was reported).
 
+my $no_elevation_value_re = _make_matcher(
+    q{ERROR: No Elevation value was returned} );
+
 sub _digest {
     my ($self, $rslt, $source) = @_;
-    $@ and return $self->_error($@);
-    if (_INSTANCE($rslt, 'SOAP::SOM')) {
+    if ( _instance( $rslt, 'SOAP::SOM' ) ) {
 	if ($rslt->fault) {
 	    return $self->_error($rslt->faultstring);
 	} else {
@@ -763,8 +778,7 @@ sub _digest {
 	}
 	unless (ref $rslt) {
 	    if (defined $source &&
-		$rslt =~ m/ \b ERROR: [ ] No [ ] Elevation [ ] value [ ]
-		    was [ ] returned [ ] from [ ] server /ismx &&
+		$rslt =~ m/ $no_elevation_value_re /smxio &&
 		(my $hash = $self->_get_bad_extent_hash($source))) {
 		return $hash;
 	    }
@@ -917,6 +931,19 @@ sub _get_source_cache {
     }
 }
 
+#	_instance( $object, $class )
+#	    and print "\$object isa $class\n";
+#
+#	Return true if $object is an instance of class $class, and false
+#	otherwise. Unlike UNIVERSAL::isa, this is false if the first
+#	object is not a reference.
+
+sub _instance {
+    my ( $object, $class ) = @_;
+    blessed( $object ) or return;
+    return $object->isa( $class );
+}
+
 #	my ($self, $lat, $lon, @_) = _latlon(@_);
 #
 #	Strip the object reference, latitude, and longitude off the
@@ -936,12 +963,22 @@ sub _get_source_cache {
     sub _latlon {
 	my ($self, $obj, @args) = @_;
 	foreach my $class (keys %known) {
-	    if (_INSTANCE($obj, $class)) {
+	    if (_instance( $obj, $class ) ) {
 		return ($self, $known{$class}->($obj), @args);
 	    }
 	}
 	return ($self, $obj, @args);
     }
+}
+
+sub _make_matcher {	## no critic (RequireArgUnpacking)
+    my $string = join ' ', @_;
+    $string =~ s/ [ ] / [ ] /smxg;
+    $string =~ m/ \A \w /smx
+	and substr $string, 0, 0, '\b ';
+    $string =~ m/ \w \z /smx
+	and $string .= ' \b';
+    return qr{ $string }smx;
 }
 
 {
