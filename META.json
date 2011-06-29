@@ -27,8 +27,11 @@
       },
       "runtime" : {
          "requires" : {
-            "SOAP::Lite" : 0,
+            "Carp" : 0,
+            "HTTP::Request::Common" : 0,
+            "LWP::UserAgent" : 0,
             "Scalar::Util" : "1.1",
+            "XML::Parser" : 0,
             "perl" : "5.008"
          }
       }
@@ -36,10 +39,10 @@
    "provides" : {
       "Geo::WebService::Elevation::USGS" : {
          "file" : "lib/Geo/WebService/Elevation/USGS.pm",
-         "version" : "0.007"
+         "version" : "0.007_01"
       }
    },
-   "release_status" : "stable",
+   "release_status" : "testing",
    "resources" : {
       "bugtracker" : {
          "web" : "https://rt.cpan.org/Public/Dist/Display.html?Name=Geo-WebService-Elevation-USGS"
@@ -48,5 +51,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.007"
+   "version" : "0.007_01"
 }
