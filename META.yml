@@ -5,7 +5,7 @@ author:
 build_requires:
   Test::More: 0.4
 dynamic_config: 1
-generated_by: 'Module::Build version 0.38, CPAN::Meta::Converter version 2.110930'
+generated_by: 'Module::Build version 0.38, CPAN::Meta::Converter version 2.110930001'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -18,7 +18,7 @@ no_index:
 provides:
   Geo::WebService::Elevation::USGS:
     file: lib/Geo/WebService/Elevation/USGS.pm
-    version: 0.007_01
+    version: 0.008
 requires:
   Carp: 0
   HTTP::Request::Common: 0
@@ -29,4 +29,4 @@ requires:
 resources:
   bugtracker: https://rt.cpan.org/Public/Dist/Display.html?Name=Geo-WebService-Elevation-USGS
   license: http://dev.perl.org/licenses/
-version: 0.007_01
+version: 0.008
