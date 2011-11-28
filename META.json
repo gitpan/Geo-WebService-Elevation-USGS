@@ -4,7 +4,7 @@
       "Tom Wyant (wyant at cpan dot org)"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "Module::Build version 0.38, CPAN::Meta::Converter version 2.110930001",
+   "generated_by" : "Module::Build version 0.38, CPAN::Meta::Converter version 2.112621",
    "license" : [
       "perl_5"
    ],
@@ -32,14 +32,16 @@
             "LWP::UserAgent" : 0,
             "Scalar::Util" : "1.1",
             "XML::Parser" : 0,
-            "perl" : "5.008"
+            "perl" : "5.008",
+            "strict" : 0,
+            "warnings" : 0
          }
       }
    },
    "provides" : {
       "Geo::WebService::Elevation::USGS" : {
          "file" : "lib/Geo/WebService/Elevation/USGS.pm",
-         "version" : "0.008"
+         "version" : "0.009"
       }
    },
    "release_status" : "stable",
@@ -51,5 +53,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.008"
+   "version" : "0.009"
 }
