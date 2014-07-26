@@ -29,17 +29,25 @@ sub requires {
     return {
 	'Carp'			=> 0,
 	'HTTP::Request::Common'	=> 0,
+	'JSON'			=> 0,
 	'LWP::UserAgent'	=> 0,
 	'Scalar::Util'		=> 1.10,
 	'strict'		=> 0,
 	'warnings'		=> 0,
-	'XML::Parser'		=> 0,
 	@extra,
     };
 }
 
 sub requires_perl {
     return 5.008;
+}
+
+sub build_requires {
+    return {
+	'Test::More'		=> 0.88,
+	'HTTP::Response'	=> 0,
+	'HTTP::Status'		=> 0,
+    };
 }
 
 
@@ -107,6 +115,12 @@ may be added.
 
 This method returns the version of Perl required by the package.
 
+=head2 build_requires
+
+This method computes and returns a reference to a hash describing the
+modules required to build the C<Geo::WebService::Elevation::USGS>
+package.
+
 =head1 ATTRIBUTES
 
 This class has no public attributes.
@@ -132,7 +146,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2013 Thomas R. Wyant, III
+Copyright (C) 2010-2014 Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text
