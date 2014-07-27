@@ -43,7 +43,7 @@
    "provides" : {
       "Geo::WebService::Elevation::USGS" : {
          "file" : "lib/Geo/WebService/Elevation/USGS.pm",
-         "version" : "0.100_01"
+         "version" : "0.100_02"
       }
    },
    "release_status" : "testing",
@@ -55,5 +55,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.100_01"
+   "version" : "0.100_02"
 }
